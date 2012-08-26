@@ -15,7 +15,7 @@ clean_malloc.so: clean_malloc.c
 	$(STRIP) $@
 
 clean:
-	rm $(TARGET)
+	rm -f $(TARGET)
 
 reformat: 
 	indent -linux clean_malloc.c
