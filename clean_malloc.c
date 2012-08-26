@@ -85,7 +85,6 @@ struct alloc_header {
 #endif
 	void *ptr;
 	size_t requested_size;
-	size_t allocated_size;
 };
 
 #define EXTRA_STATIC_SPACE	128
@@ -216,14 +215,14 @@ void *malloc(size_t size)
 {
 	void *ptr = NULL;
 	struct alloc_header alloc_header;
+	size_t allocated_size;
 
 	alloc_header.requested_size = size;
-	alloc_header.allocated_size =
-	    alloc_header.requested_size + sizeof(alloc_header);
+	allocated_size = alloc_header.requested_size + sizeof(alloc_header);
 #ifdef CHECK_COOKIE
 	alloc_header.cookie = ALLOC_COOKIE;
 #endif
-	alloc_header.ptr = real_malloc(alloc_header.allocated_size);
+	alloc_header.ptr = real_malloc(allocated_size);
 	if (alloc_header.ptr) {
 		*(struct alloc_header *)alloc_header.ptr = alloc_header;
 		ptr = alloc_header.ptr + sizeof(alloc_header);
@@ -236,14 +235,14 @@ void *calloc(size_t nmemb, size_t size)
 {
 	void *ptr = NULL;
 	struct alloc_header alloc_header;
+	size_t allocated_size;
 
 	alloc_header.requested_size = (size * nmemb);
-	alloc_header.allocated_size =
-	    alloc_header.requested_size + sizeof(alloc_header);
+	allocated_size = alloc_header.requested_size + sizeof(alloc_header);
 #ifdef CHECK_COOKIE
 	alloc_header.cookie = ALLOC_COOKIE;
 #endif
-	alloc_header.ptr = real_malloc(alloc_header.allocated_size);
+	alloc_header.ptr = real_malloc(allocated_size);
 	if (alloc_header.ptr) {
 		*(struct alloc_header *)alloc_header.ptr = alloc_header;
 		ptr = alloc_header.ptr + sizeof(alloc_header);
@@ -265,7 +264,8 @@ void free(void *ptr)
 			return;
 		}
 #endif
-		memset(store_ptr->ptr, 0, store_ptr->allocated_size);
+		memset(store_ptr->ptr, 0,
+		       (ptr - store_ptr->ptr) + store_ptr->requested_size);
 		real_free(store_ptr->ptr);
 	}
 }
@@ -299,28 +299,28 @@ int posix_memalign(void **memptr, size_t alignment, size_t size)
 		rc = -EINVAL;
 	} else {
 		struct alloc_header alloc_header;
-		size_t added_space;
+		size_t allocated_size;
 
 		*memptr = NULL;
 
-		added_space =
+		alloc_header.requested_size = size;
+		allocated_size =
 		    (sizeof(alloc_header) / alignment) +
 		    ((sizeof(alloc_header) % alignment) ? 1 : 0);
-		added_space *= alignment;
-
-		alloc_header.requested_size = size;
-		alloc_header.allocated_size =
-		    alloc_header.requested_size + added_space;
+		allocated_size *= alignment;
+		allocated_size += alloc_header.requested_size;
 #ifdef CHECK_COOKIE
 		alloc_header.cookie = ALLOC_COOKIE;
 #endif
 		alloc_header.ptr = NULL;
 		rc = real_posix_memalign(&alloc_header.ptr, alignment,
-					 alloc_header.allocated_size);
+					 allocated_size);
 
 		if (!rc && alloc_header.ptr) {
 			struct alloc_header *store_ptr;
-			*memptr = alloc_header.ptr + added_space;
+			*memptr =
+			    alloc_header.ptr + allocated_size -
+			    alloc_header.requested_size;
 			store_ptr = (struct alloc_header *)*memptr;
 			store_ptr--;
 			*store_ptr = alloc_header;
