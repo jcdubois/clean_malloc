@@ -82,6 +82,7 @@ static int (*real_posix_memalign) (void **memptr, size_t alignment,
 struct alloc_header {
 #ifdef CHECK_COOKIE
 	unsigned int cookie;
+	unsigned int dummy;
 #endif
 	void *ptr;
 	size_t requested_size;
@@ -244,6 +245,7 @@ void *malloc(size_t size)
 	allocated_size = alloc_header.requested_size + sizeof(alloc_header);
 #ifdef CHECK_COOKIE
 	alloc_header.cookie = ALLOC_COOKIE;
+	alloc_header.dummy = 0;
 #endif
 	alloc_header.ptr = real_malloc(allocated_size);
 	if (alloc_header.ptr) {
@@ -331,6 +333,7 @@ int posix_memalign(void **memptr, size_t alignment, size_t size)
 		allocated_size += alloc_header.requested_size;
 #ifdef CHECK_COOKIE
 		alloc_header.cookie = ALLOC_COOKIE;
+		alloc_header.dummy = 0;
 #endif
 		alloc_header.ptr = NULL;
 		rc = real_posix_memalign(&alloc_header.ptr, alignment,
