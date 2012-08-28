@@ -91,6 +91,13 @@ struct alloc_header {
 static char extra_space[EXTRA_STATIC_SPACE];
 static int extra_space_count = 0;
 
+/**
+ * We use a constructor to lookup the malloc/free/posix_memalign addresses
+ * of the glibc functions.
+ * However it does happen that our functions are called before the 
+ * constructor is called. In such instance we setup some default versions
+ * of these functions that will force the call to the constructor.
+ */
 __attribute__ ((constructor))
 void init_malloc(void)
 {
@@ -137,9 +144,11 @@ void init_malloc(void)
  * There is a chicken and egg problem with calloc. dlsym
  * is calling calloc. So the constructor (init_malloc) will call calloc
  * to resolve the malloc/realloc/free/... funtions. 
- * calloc in turn will call malloc and we will end up here.
- * Therefore we need to write a very crude calloc that will return a bit
+ * Our calloc in turn will call real_malloc and we will end up here when 
+ * the constructor is not yet done.
+ * Therefore we need to write a very crude malloc that will return a bit
  * of space when dlsym needs it.
+ * In other cases it will force the call of the constructor.
  */
 static void *default_malloc(size_t size)
 {
@@ -164,12 +173,17 @@ static void *default_malloc(size_t size)
 
 		return real_malloc(size);
 	} else {
+		/* it is assumed this space will never be released */
 		extra_space_count += size;
 	}
 
 	return ptr;
 }
 
+/**
+ * For this default free function, we force the constructor and call the 
+ * real free if the function address resolution was successful.
+ */
 static void default_free(void *ptr)
 {
 	/*
@@ -188,6 +202,11 @@ static void default_free(void *ptr)
 	real_free(ptr);
 }
 
+/**
+ * For this default posix_memalign function, we force the constructor and 
+ * call the real posix_memalign if the function address resolution was 
+ * successful.
+ */
 static int default_posix_memalign(void **memptr, size_t alignment, size_t size)
 {
 	/*
@@ -207,9 +226,13 @@ static int default_posix_memalign(void **memptr, size_t alignment, size_t size)
 	return real_posix_memalign(memptr, alignment, size);
 }
 
-/*
+/**
+ * This is our malloc function. Basically we add a header to the requested
+ * memory where we can store the size of the allocated memory and the real
+ * pointer to the block.
  * We need to support malloc(0) as the glibc malloc function returns a 
- * valid pointer in such case.
+ * valid pointer in such case. Some RegExp functions (among others) do not 
+ * expect malloc(0) to return NULL.
  */
 void *malloc(size_t size)
 {
@@ -231,27 +254,24 @@ void *malloc(size_t size)
 	return ptr;
 }
 
+/**
+ * For calloc, we just call malloc then memset the area to 0
+ */
 void *calloc(size_t nmemb, size_t size)
 {
-	void *ptr = NULL;
-	struct alloc_header alloc_header;
-	size_t allocated_size;
+	void *ptr = malloc(size * nmemb);
 
-	alloc_header.requested_size = (size * nmemb);
-	allocated_size = alloc_header.requested_size + sizeof(alloc_header);
-#ifdef CHECK_COOKIE
-	alloc_header.cookie = ALLOC_COOKIE;
-#endif
-	alloc_header.ptr = real_malloc(allocated_size);
-	if (alloc_header.ptr) {
-		*(struct alloc_header *)alloc_header.ptr = alloc_header;
-		ptr = alloc_header.ptr + sizeof(alloc_header);
-		memset(ptr, 0, alloc_header.requested_size);
+	if (ptr && (size * nmemb)) {
+		memset(ptr, 0, size * nmemb);
 	}
 
 	return ptr;
 }
 
+/**
+ * for free, we memset the allocated memory to 0 (using the header
+ * information, before calling the real free function
+ */
 void free(void *ptr)
 {
 	if (ptr) {
