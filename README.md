@@ -24,3 +24,23 @@ In turn these functions will use the following functions from glibc.
  - posix_memalign
 
 Usage: LD_PRELOAD=./clean_malloc.so command args ...
+
+clean_write
+===========
+
+The purpose of this library is to write to 0 any buffer that 
+has been written or was sent from the application.
+This is not respecting the API as the buffer shall not be touched
+or changed by these functions. It might even make some application
+misbehave. So be carefull.
+
+This library redefines the following functions:
+ - write
+ - send
+ - sendto
+ - sendmsg
+
+In turn these functions will use the following functions from glibc.
+  - write
+  - sendto
+  - sendmsg
